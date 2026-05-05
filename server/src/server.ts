@@ -42,6 +42,29 @@ const history: BaseLanguageModelInput = [
     ],
 ];
 
+// Connect to the MongoDB Atlas database
+await connectToDatabase();
+
+// Initialize a MongoDB Atlas vector store with the specified configuration
+const vectorStore = new MongoDBAtlasVectorSearch(
+// Google Cloud Vertex AI's text embeddings model will be used for vectorizing the text chunks
+new VertexAIEmbeddings({
+    model: "text-embedding-005"
+}),
+{
+    collection: collections.context as any,
+    // The name of the Atlas Vector Search index. You must create this in the Atlas UI.
+    indexName: "vector_index",
+    // The name of the collection field containing the raw content. Defaults to "text"
+    textKey: "text",
+    // The name of the collection field containing the embedded text. Defaults to "embedding"
+    embeddingKey: "embedding",
+}
+);
+
+// Initialize a retriever wrapper around the MongoDB Atlas vector store
+const vectorStoreRetriever = vectorStore.asRetriever();
+
 router.post("/messages", async (req, res) => {
     let message = req.body.text;
     if (!message) {
@@ -49,6 +72,22 @@ router.post("/messages", async (req, res) => {
     }
 
     let prompt = `User question: ${message}.`;
+
+    // If RAG is enabled, retrieve context from the MongoDB Atlas vector store
+  const rag = req.body.rag;
+  if (rag) {
+      const context = await vectorStoreRetriever.invoke(message);
+
+      if (context) {
+          prompt += `
+
+          Context:
+          ${context?.map(doc => doc.pageContent).join("\n")}
+          `;
+      } else {
+          console.error("Retrieval of context failed");
+      }
+  }
 
     try {
         const modelResponse = await model.invoke([...history, prompt]);
