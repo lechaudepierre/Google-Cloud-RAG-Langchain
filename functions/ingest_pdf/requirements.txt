@@ -1,0 +1,8 @@
+functions-framework==3.*
+google-cloud-storage==2.18.*
+pypdf==4.3.*
+langchain==0.3.*
+langchain-community==0.3.*
+langchain-google-vertexai==2.0.*
+langchain-mongodb==0.2.*
+pymongo==4.10.*
