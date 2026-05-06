@@ -183,16 +183,10 @@ const quizChain = RunnableSequence.from([
     new StringOutputParser(),
 ]);
 
-// =============================================================================
-// In-memory conversation history (single session).
-// For multi-instance / persistent memory, swap for a Mongo-backed store.
-// =============================================================================
+
 const history: ChatTurn[] = [];
 const MAX_HISTORY_TURNS = 20;
 
-// =============================================================================
-// POST /messages
-// =============================================================================
 router.post("/messages", async (req, res) => {
     const message: string | undefined = req.body?.text;
     if (!message || typeof message !== "string") {
