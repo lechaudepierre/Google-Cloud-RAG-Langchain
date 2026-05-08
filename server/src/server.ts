@@ -128,22 +128,16 @@ const chatChain = RunnableSequence.from([
 // =============================================================================
 // Quiz chain (LCEL) — triggered by /quiz [optional topic]
 // =============================================================================
-const QUIZ_SYSTEM_INSTRUCTION = `You are SmartStudy, generating a 5-question multiple-choice quiz for a student based on their lecture notes.
 
-Generate exactly 5 distinct questions covering the most important concepts in the provided context. Each question MUST:
-- have a clear, focused stem
-- have exactly 4 answer options labelled A, B, C, D
-- have exactly one correct answer
-- include a brief (1-2 sentence) explanation
-- include a citation in the format [filename.pdf, page X]
 
-Use ONLY information from the context. If the context is too thin to produce 5 high-quality questions, generate fewer and explain why.
 
-Format your response in Markdown, exactly like this:
+const QUIZ_SINGLE_QUESTION_INSTRUCTION = `You are SmartStudy, generating ONE multiple-choice question for a student based on their lecture notes.
 
-**Quiz — 5 questions on your material**
+Generate exactly 1 question using ONLY the provided context.
 
-**Question 1.** <stem>
+Format exactly like this:
+
+**Question.** <stem>
 
 - A) <option>
 - B) <option>
@@ -152,33 +146,23 @@ Format your response in Markdown, exactly like this:
 
 **Correct answer:** <letter>
 **Explanation:** <one or two sentences>
-**Source:** [filename.pdf, page X]
+**Source:** [filename.pdf, page X]`;
 
----
-
-(repeat for questions 2 to 5, separating each with a horizontal rule)
-
-End with a short encouragement and an offer to discuss any answer in detail.`;
-
-const quizPrompt = ChatPromptTemplate.fromMessages([
-    ["system", QUIZ_SYSTEM_INSTRUCTION],
-    ["human", `Topic focus: {topic}
-
-Context from the student's lecture notes:
-{context}`],
+const singleQuestionPrompt = ChatPromptTemplate.fromMessages([
+    ["system", QUIZ_SINGLE_QUESTION_INSTRUCTION],
+    ["human", `Topic: {topic}\nAlready asked questions (do not repeat): {asked}\n\nContext:\n{context}`],
 ]);
 
-const quizChain = RunnableSequence.from([
+const singleQuestionChain = RunnableSequence.from([
     {
-        topic: (input: { topic: string }) =>
-            input.topic || "the most important concepts in the material",
-        context: async (input: { topic: string }) => {
-            const query = input.topic || "main concepts and key ideas overview";
-            const docs = await quizRetriever.invoke(query);
+        topic: (input: { topic: string; asked: string }) => input.topic,
+        asked: (input: { topic: string; asked: string }) => input.asked,
+        context: async (input: { topic: string; asked: string }) => {
+            const docs = await quizRetriever.invoke(input.topic);
             return formatDocsWithCitations(docs);
         },
     },
-    quizPrompt,
+    singleQuestionPrompt,
     model,
     new StringOutputParser(),
 ]);
@@ -194,7 +178,7 @@ router.post("/messages", async (req, res) => {
     }
 
     // /quiz command detection (case-insensitive, with optional topic)
-    const quizMatch = message.match(/^\s*\/quiz\b\s*(.*)$/is);
+    const quizMatch = message.match(/^\s*[\/\\]quizz?\b\s*(.*)$/is);
     const isQuiz = !!quizMatch;
     const quizTopic = quizMatch?.[1]?.trim() ?? "";
 
@@ -205,7 +189,18 @@ router.post("/messages", async (req, res) => {
         let answer: string;
 
         if (isQuiz) {
-            answer = await quizChain.invoke({ topic: quizTopic });
+            const questions: string[] = [];
+            
+            for (let i = 0; i < 5; i++) {
+                const question = await singleQuestionChain.invoke({
+                    topic: quizTopic,
+                    asked: questions.join("\n---\n"), // évite les répétitions
+                });
+                questions.push(question);
+            }
+
+            answer = `**Quiz — 5 questions**\n\n` + 
+                    questions.map((q, i) => `**${i + 1}/5**\n\n${q}`).join("\n\n---\n\n");
         } else if (rag) {
             answer = await chatChain.invoke({ question: message, history });
         } else {
@@ -243,3 +238,5 @@ app.use(router);
 app.listen(config.server.port, () => {
     console.log(`SmartStudy Tutor server running on port:${config.server.port}...`);
 });
+
+// this is for test the comment

@@ -2,9 +2,9 @@
     <div class="chat">
         @if (!messages.length) {
             <h1>
-                <span>Insurance Assistant</span>
+                <span>Smart study budy</span>
                 <br />
-                <span class="assistant-question">How can I help you today?</span>
+                <span class="assistant-question">Ready to smart study ?</span>
             </h1>
         }
 
@@ -37,8 +37,8 @@
 
         <form class="input" [formGroup]="messageForm" (ngSubmit)="submitForm()">
             <mat-form-field class="question-field">
-                <mat-label>Ask a question...</mat-label>
-                <input autofocus matInput placeholder="Ex. Does my car insurance cover mechanical damage?" formControlName="text">
+                <mat-label>If you have already uploaded your files, ask a question or create your own quizz with "\quizz -subject-"</mat-label>
+                <input autofocus matInput placeholder="Ex. \quizz pathologies detection using ECG" formControlName="text">
            </mat-form-field>
             <mat-button-toggle-group class="rag-toggle" formControlName="rag" aria-label="RAG">
                 <mat-button-toggle [value]="true">RAG</mat-button-toggle>
