@@ -26,7 +26,7 @@ router.get("/", async (_, res) => {
 // =============================================================================
 const model = new ChatVertexAI({
     model: "gemini-2.5-flash",
-    maxOutputTokens: 2048,
+    maxOutputTokens: 8192,
     temperature: 0.4,
     topP: 0.9,
     topK: 20,
@@ -125,19 +125,22 @@ const chatChain = RunnableSequence.from([
     new StringOutputParser(),
 ]);
 
+
 // =============================================================================
 // Quiz chain (LCEL) — triggered by /quiz [optional topic]
 // =============================================================================
 
 
 
-const QUIZ_SINGLE_QUESTION_INSTRUCTION = `You are SmartStudy, generating ONE multiple-choice question for a student based on their lecture notes.
+const QUIZ_INSTRUCTION = `You are SmartStudy, generating a multiple-choice quiz for a student based on their lecture notes.
 
-Generate exactly 1 question using ONLY the provided context.
+Generate EXACTLY 5 DIFFERENT multiple-choice questions using ONLY the provided context. The questions must cover DIFFERENT aspects of the topic — do not repeat the same idea, do not rephrase the same question twice. Vary the difficulty if possible.
 
-Format exactly like this:
+Use ONLY the provided context. If the context is insufficient to produce 5 distinct questions, generate as many as you can and clearly state that fewer were possible.
 
-**Question.** <stem>
+Format the output EXACTLY like this, with "---" separators between questions:
+
+**Question 1.** <stem>
 
 - A) <option>
 - B) <option>
@@ -146,27 +149,42 @@ Format exactly like this:
 
 **Correct answer:** <letter>
 **Explanation:** <one or two sentences>
-**Source:** [filename.pdf, page X]`;
+**Source:** [filename.pdf, page X]
 
-const singleQuestionPrompt = ChatPromptTemplate.fromMessages([
-    ["system", QUIZ_SINGLE_QUESTION_INSTRUCTION],
-    ["human", `Topic: {topic}\nAlready asked questions (do not repeat): {asked}\n\nContext:\n{context}`],
+---
+
+**Question 2.** <stem>
+
+- A) <option>
+- B) <option>
+- C) <option>
+- D) <option>
+
+**Correct answer:** <letter>
+**Explanation:** <one or two sentences>
+**Source:** [filename.pdf, page X]
+
+---
+
+(continue with the same exact format until Question 5)`;
+
+const quizPrompt = ChatPromptTemplate.fromMessages([
+    ["system", QUIZ_INSTRUCTION],
+    ["human", `Topic: {topic}\n\nContext from your lecture notes:\n{context}`],
 ]);
 
-const singleQuestionChain = RunnableSequence.from([
+const quizChain = RunnableSequence.from([
     {
-        topic: (input: { topic: string; asked: string }) => input.topic,
-        asked: (input: { topic: string; asked: string }) => input.asked,
-        context: async (input: { topic: string; asked: string }) => {
+        topic: (input: { topic: string }) => input.topic,
+        context: async (input: { topic: string }) => {
             const docs = await quizRetriever.invoke(input.topic);
             return formatDocsWithCitations(docs);
         },
     },
-    singleQuestionPrompt,
+    quizPrompt,
     model,
     new StringOutputParser(),
 ]);
-
 
 const history: ChatTurn[] = [];
 const MAX_HISTORY_TURNS = 20;
@@ -189,18 +207,8 @@ router.post("/messages", async (req, res) => {
         let answer: string;
 
         if (isQuiz) {
-            const questions: string[] = [];
-            
-            for (let i = 0; i < 5; i++) {
-                const question = await singleQuestionChain.invoke({
-                    topic: quizTopic,
-                    asked: questions.join("\n---\n"), // évite les répétitions
-                });
-                questions.push(question);
-            }
-
-            answer = `**Quiz — 5 questions**\n\n` + 
-                    questions.map((q, i) => `**${i + 1}/5**\n\n${q}`).join("\n\n---\n\n");
+            const quizOutput = await quizChain.invoke({ topic: quizTopic });
+            answer = `**Quiz — 5 questions**\n\n${quizOutput}`;
         } else if (rag) {
             answer = await chatChain.invoke({ question: message, history });
         } else {
